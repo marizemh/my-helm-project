@@ -1,0 +1,2 @@
+environment: dev
+secretValue: "dev-secret-12345"

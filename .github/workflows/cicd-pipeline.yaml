@@ -1,0 +1,62 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+      - name: Set up Kubectl
+        run: |
+          curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Set up Azure CLI
+        uses: azure/setup-az-cli@v1
+
+      - name: Login to Azure
+        run: |
+          az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials --resource-group my-helm-project-rg --name my-helm-project-aks
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Helmfile
+        run: |
+          curl -fsSL -o helmfile_linux_amd64.tar.gz https://github.com/roboll/helmfile/releases/download/v0.144.0/helmfile_linux_amd64.tar.gz
+          tar -xzf helmfile_linux_amd64.tar.gz
+          sudo mv helmfile /usr/local/bin/helmfile
+          helmfile version
+
+      - name: Deploy to Dev Environment
+        run: |
+          helmfile -e dev apply
+
+      - name: Deploy to Stage Environment
+        if: github.ref == 'refs/heads/main'
+        run: |
+          helmfile -e stage apply
